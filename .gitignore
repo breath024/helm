@@ -1,0 +1,40 @@
+# --- 비밀정보 ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets*
+credentials*
+*token*.txt
+api.txt
+
+# --- 파이썬 ---
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+*.egg-info/
+
+# --- 노드 ---
+node_modules/
+dist/
+.next/
+
+# --- OS/에디터 ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+
+# --- 로그/DB/캐시 ---
+*.log
+logs/
+*.db
+*.sqlite
+*.sqlite3
+.cache/
+
+# 세션 캐시 (대화 제목 포함)
+.session_cache.json

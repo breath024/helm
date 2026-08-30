@@ -1,0 +1,211 @@
+@font-face{
+  font-family:"JBM";src:url("/static/vendor/font/jbm-400.woff2") format("woff2");
+  font-weight:400;font-display:block;
+}
+@font-face{
+  font-family:"JBM";src:url("/static/vendor/font/jbm-700.woff2") format("woff2");
+  font-weight:700;font-display:block;
+}
+
+/* 눈 편한 어두운 톤: 순검정 대신 살짝 푸른 회색, 대비는 낮게 */
+:root{
+  --bg:#101013;
+  --panel:#17171c;
+  --panel2:#1d1d24;
+  --line:#2a2a33;
+  --fg:#d6d6de;
+  --dim:#8b8b99;
+  --accent:#c98f5a;
+  --accent-dim:#5a4535;
+  --run:#5ab98a;
+  --dead:#6a6a78;
+  --term-bg:#131318;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body,#app{height:100%}
+body{
+  background:var(--bg);color:var(--fg);
+  font:13px/1.5 "Pretendard","Malgun Gothic",-apple-system,system-ui,sans-serif;
+  overflow:hidden;
+}
+#app{display:flex}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+
+/* ---------- 사이드바 ---------- */
+#side{
+  width:262px;flex:none;display:flex;flex-direction:column;
+  background:var(--panel);border-right:1px solid var(--line);
+}
+.brand{
+  padding:14px 16px 12px;font-size:13px;font-weight:600;
+  color:var(--accent);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:9px;
+}
+.brand .mark{
+  width:19px;height:19px;flex:none;
+  fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;
+}
+.brand .wordmark{letter-spacing:.16em}
+.block{padding:14px 14px 16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.block.grow{flex:1;min-height:0;border-bottom:none}
+.lbl{font-size:11px;color:var(--dim);letter-spacing:.03em}
+.lbl.row{display:flex;align-items:center;justify-content:space-between}
+select,.filter{
+  background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+  color:var(--fg);padding:7px 9px;font:inherit;outline:none;width:100%;
+}
+select:focus,.filter:focus{border-color:var(--accent-dim)}
+
+.seg{display:flex;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:3px}
+.seg button{flex:1;padding:6px 8px;border-radius:5px;font-size:12px;color:var(--dim);white-space:nowrap}
+.seg button:hover{color:var(--fg)}
+.seg button.on{background:var(--accent-dim);color:#f0e2d4}
+.seg.small button{padding:4px 9px;font-size:11px}
+.seg.tiny button{padding:4px 2px;font-size:10.5px}
+.seg.dim{opacity:.35;pointer-events:none}
+select.mini{
+  width:auto;padding:4px 8px;font-size:11.5px;border-radius:6px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+}
+select optgroup{background:var(--panel);color:var(--dim);font-style:normal}
+select option{background:var(--panel2);color:var(--fg)}
+
+.primary{
+  margin-top:2px;padding:9px;border-radius:7px;font-weight:600;
+  background:var(--accent-dim);color:#f2e6da;border:1px solid #6d5540;
+}
+.primary:hover{background:#6b5138}
+.note{font-size:10.5px;line-height:1.45;color:var(--dim);margin-top:-2px}
+.note.warn{color:#d99b6a}
+.chip.warn{color:#d99b6a;border-color:#5c4430}
+.secondary{
+  padding:8px;border-radius:7px;font-size:12px;color:var(--dim);
+  background:var(--panel2);border:1px solid var(--line);
+}
+.secondary:hover{color:var(--fg);border-color:#3b3b47}
+.ghost{color:var(--dim);padding:0 4px;font-size:13px}
+
+/* ---------- 코드 편집기 패널 ---------- */
+.edit-body{flex:1;min-height:0;display:flex}
+.edit-tree{
+  width:186px;flex:none;overflow:auto;border-right:1px solid var(--line);
+  background:#121216;padding:4px 0;font-size:11.5px;
+}
+.edit-tree::-webkit-scrollbar{width:8px}
+.edit-tree::-webkit-scrollbar-thumb{background:#31313c;border-radius:4px}
+.tnode{padding:3px 8px 3px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#a8a8b6}
+.tnode:hover{background:var(--panel2);color:var(--fg)}
+.tnode.d{color:#8fa6c4}
+.tnode.sel{background:var(--accent-dim);color:#f0e2d4}
+.edit-pane{flex:1;min-width:0;display:flex;flex-direction:column}
+.edit-pane .CodeMirror{flex:1;min-height:0;height:auto;font-size:12.5px;
+  font-family:"Cascadia Mono","D2Coding",Consolas,monospace;line-height:1.45}
+.dirty{color:var(--accent)}
+.saved{color:var(--run)}
+.ghost:hover{color:var(--fg)}
+
+/* ---------- 최근 작업 ---------- */
+.list{flex:1;min-height:0;overflow-y:auto;margin:0 -6px;padding:0 6px}
+.list::-webkit-scrollbar{width:8px}
+.list::-webkit-scrollbar-thumb{background:#31313c;border-radius:4px}
+.item{
+  padding:8px 9px;border-radius:6px;cursor:pointer;
+  border:1px solid transparent;margin-bottom:2px;
+}
+.item:hover{background:var(--panel2);border-color:var(--line)}
+.item .t{font-size:12px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .m{display:flex;gap:6px;margin-top:3px;font-size:10.5px;color:var(--dim)}
+.item .m .p{color:#7d8fa8}
+.empty{color:var(--dim);font-size:11.5px;padding:10px 4px}
+
+/* ---------- 본문 ---------- */
+#main{flex:1;min-width:0;display:flex;flex-direction:column}
+#topbar{
+  height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;
+  background:var(--panel);border-bottom:1px solid var(--line);
+}
+.spacer{flex:1}
+
+/* ---------- 사용량 바 (컨텍스트 · 구독 한도) ---------- */
+.usage,.limits{display:flex;align-items:center;gap:8px}
+.ubar{
+  display:inline-block;width:112px;height:6px;border-radius:3px;overflow:hidden;
+  background:var(--panel2);border:1px solid var(--line);
+}
+.ubar i{
+  display:block;height:100%;width:0;border-radius:3px;
+  background:var(--accent);transition:width .35s ease;
+}
+.ubar.mid i{background:#d9b56a}
+.ubar.hot i{background:#e0836f}
+
+/* 구독 한도(5시간·주간)는 좁게 두 개 */
+.limits{gap:6px;cursor:pointer;padding-right:4px}
+.limits .ubar{width:52px}
+.limits .lname{font-size:10.5px;color:var(--dim)}
+.limits .lpct{
+  font-size:11px;color:var(--dim);font-family:"Cascadia Mono",Consolas,monospace;
+  min-width:30px;
+}
+.limits .lpct.mid{color:#d9b56a}
+.limits .lpct.hot{color:#e0836f}
+.limits .sep{color:var(--line)}
+.limits.busy{opacity:.5}
+.usage .utext{
+  font-size:11px;color:var(--dim);white-space:nowrap;
+  font-family:"Cascadia Mono",Consolas,monospace;
+}
+.usage.mid .ubar i{background:#d9b56a}
+.usage.mid .utext{color:#d9b56a}
+.usage.hot .ubar i{background:#e0836f}
+.usage.hot .utext{color:#e0836f}
+
+#tabs{display:flex;gap:4px;overflow-x:auto;max-width:60%}
+#tabs::-webkit-scrollbar{height:0}
+.tab{
+  display:flex;align-items:center;gap:7px;padding:5px 9px;border-radius:6px;
+  background:var(--panel2);border:1px solid var(--line);white-space:nowrap;font-size:12px;color:var(--dim);
+}
+.tab:hover{color:var(--fg)}
+.tab.on{background:var(--accent-dim);border-color:#6d5540;color:#f0e2d4}
+.tab .dot{width:6px;height:6px;border-radius:50%;background:var(--run);flex:none}
+.tab.off .dot{background:var(--dead)}
+.tab .x{color:inherit;opacity:.5;font-size:13px;line-height:1}
+.tab .x:hover{opacity:1}
+
+#grid{flex:1;min-height:0;display:grid;gap:8px;background:var(--bg);padding:8px}
+#grid.n1{grid-template-columns:1fr}
+#grid.n2{grid-template-columns:1fr 1fr}
+#grid.n3{grid-template-columns:1fr 1fr 1fr}
+#grid.n4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+
+.slot{
+  background:var(--term-bg);min-width:0;min-height:0;display:flex;flex-direction:column;
+  position:relative;border-radius:10px;overflow:hidden;
+  border:1px solid var(--line);
+  box-shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.22);
+  transition:border-color .12s ease;
+}
+.slot.focus{border-color:#6d5540}
+.slot .head{
+  height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;
+  background:linear-gradient(180deg,#1b1b21,#17171c);
+  border-bottom:1px solid var(--line);font-size:11px;color:var(--dim);
+}
+.slot .head .nm{color:#b9b9c6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slot .head .chip{
+  padding:1px 6px;border-radius:4px;background:var(--panel2);
+  border:1px solid var(--line);font-size:10px;color:var(--dim);flex:none;
+}
+.slot .term{flex:1;min-height:0;padding:12px 6px 10px 14px;background:var(--term-bg)}
+.slot .term .xterm{height:100%}
+.xterm-viewport::-webkit-scrollbar{width:10px}
+.xterm-viewport::-webkit-scrollbar-track{background:transparent}
+.xterm-viewport::-webkit-scrollbar-thumb{background:#2f2f3a;border-radius:5px;
+  border:3px solid var(--term-bg)}
+.xterm-viewport::-webkit-scrollbar-thumb:hover{background:#3d3d4a}
+.hollow{
+  display:flex;align-items:center;justify-content:center;height:100%;
+  color:#4b4b58;font-size:12px;
+}
+.hidden{display:none !important}

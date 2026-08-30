@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>ClaudeDock — 채팅 프로토타입</title>
+<link rel="stylesheet" href="/static_chat/chat.css">
+</head>
+<body>
+
+<div id="setup" class="center">
+  <div class="card">
+    <h1>채팅형 프로토타입</h1>
+    <p class="sub">터미널 없이 대화·툴호출·권한요청을 카드로 그린다.</p>
+    <label class="lbl">폴더</label>
+    <select id="proj"></select>
+    <label class="lbl">모델</label>
+    <select id="model"></select>
+    <label class="lbl">권한 모드</label>
+    <select id="perm"></select>
+    <div class="note" id="permNote"></div>
+    <button id="startBtn" class="primary">세션 시작</button>
+    <div id="setupErr" class="err"></div>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+ <aside id="side">
+   <div class="brand">대화</div>
+   <input id="cfilter" class="cfilter" placeholder="검색…">
+   <div id="clist" class="clist"></div>
+   <button id="newChat" class="secondary">＋ 새 대화</button>
+ </aside>
+ <section id="main">
+  <header id="bar">
+    <span class="dot" id="statusDot"></span>
+    <span id="ctx"></span>
+    <span class="spacer"></span>
+    <span id="cost" class="cost"></span>
+    <select id="model2" class="mini"></select>
+    <select id="perm2" class="mini"></select>
+    <button id="stopBtn" class="ghost" title="중단">■ 중단</button>
+  </header>
+
+  <div id="feed"></div>
+
+  <div id="working" class="hidden">
+    <span class="spin"></span>
+    <span id="workWhat">작동 중</span>
+    <span id="workSec" class="wsec"></span>
+  </div>
+
+  <div id="composer">
+    <textarea id="input" rows="1" placeholder="메시지를 쓰고 Enter (줄바꿈은 Shift+Enter)"></textarea>
+    <button id="send" class="primary">보내기</button>
+  </div>
+ </section>
+</div>
+
+<div id="permModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">이 작업을 허용할까?</div>
+    <div class="modal-tool" id="pmTool"></div>
+    <pre class="modal-input" id="pmInput"></pre>
+    <div class="modal-why" id="pmWhy"></div>
+    <input id="pmMsg" class="modal-msg" placeholder="거절 이유 (선택) — claude에게 전달돼">
+    <div class="modal-btns">
+      <button id="pmDeny" class="deny">거절</button>
+      <button id="pmAllow" class="allow">허용</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static_chat/vendor/marked.js"></script>
+<script src="/static_chat/vendor/purify.js"></script>
+<script src="/static_chat/chat.js"></script>
+</body>
+</html>
