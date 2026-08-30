@@ -39,3 +39,6 @@ logs/*
 
 # 세션 캐시 (대화 제목 포함)
 .session_cache.json
+
+# 개인 설정 (폴더 목록·최근 상태) — config.example.json 참고
+config.json
