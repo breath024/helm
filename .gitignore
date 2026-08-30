@@ -30,7 +30,8 @@ desktop.ini
 
 # --- 로그/DB/캐시 ---
 *.log
-logs/
+logs/*
+!logs/*.md
 *.db
 *.sqlite
 *.sqlite3
