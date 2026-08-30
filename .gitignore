@@ -42,3 +42,6 @@ logs/*
 
 # 개인 설정 (폴더 목록·최근 상태) — config.example.json 참고
 config.json
+
+# 바로가기 (윈도우 .lnk 안에 SID·호스트명·절대경로가 박힌다)
+*.lnk

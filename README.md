@@ -31,7 +31,7 @@ HELM은 콘솔 창을 아예 만들지 않는다. ConPTY(`pywinpty`)로 claude�
 
 ## 실행
 
-`HELM.lnk` 실행. pythonw로 떠서 콘솔창은 안 뜬다.
+`pythonw app.py` 실행. 콘솔창은 안 뜬다. (바로가기를 만들어 두면 편하다 — `.lnk` 안에는 만든 PC의 SID·호스트명이 박혀서 저장소에 넣지 않는다.)
 
 창 없이 서버만 띄우려면 `python app.py --server 8791` 후 브라우저로 접속.
 

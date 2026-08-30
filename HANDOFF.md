@@ -34,7 +34,7 @@
 - (선택) 폴더명을 `Desktop/HELM`으로 — 폴더 이동 + `.lnk` 재생성이 한 세트다
 
 ## 실행
-`HELM.lnk` 더블클릭. (pythonw로 떠서 콘솔창 안 뜸)
+`pythonw app.py` (콘솔창 안 뜸). 바탕화면 바로가기를 만들어 두면 편하다.
 
 점검할 땐 창 없이 서버만: `python app.py --server 8791` → 브라우저로 접속.
 
@@ -61,7 +61,8 @@ config.json         폴더 목록·마지막 선택 (첫 실행 때 구 앱 proj
 ## 이름·로고 (2026-08-14 개명)
 **ClaudeDock → HELM.** 옛 문서·경로에서 ClaudeDock을 보면 같은 물건이다.
 **폴더명 `Desktop/ClaudeDock`만 그대로** — 바로가기 대상 경로가 깨지기 때문.
-바로가기는 `HELM.lnk`(본체) / `HELM 채팅.lnk`(채팅형).
+바로가기는 `HELM.lnk`(본체) / `HELM 채팅.lnk`(채팅형) — **로컬에만 둔다.**
+`.lnk` 안에 만든 PC의 SID·호스트명·절대경로가 박혀서 저장소에서 뺐다(2026-08-31).
 
 로고는 조타륜(ship's helm), 색은 액센트 `#c98f5a`. **원본이 두 벌이니 같이 고칠 것**:
 - **화면** — `static/index.html`·`static_chat/index.html`의 인라인 SVG (파비콘도 같은 그림 data URI)
