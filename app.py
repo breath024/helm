@@ -150,6 +150,11 @@ def save_config(cfg):
 # ~/.claude/projects/<인코딩된 경로>/<session-uuid>.jsonl
 # 파일명이 곧 --resume 에 넣는 세션 ID다.
 
+# 캐시는 파일의 mtime·size 가 그대로면 다시 안 읽는다. 그래서 읽는 항목을 늘려도
+# 옛 세션은 영영 갱신되지 않는다 — 파일이 안 변하니까. 항목을 늘릴 땐 이 숫자를 올려서
+# 한 번 다시 훑게 한다.
+_CACHE_VER = 2
+
 _cache_lock = threading.Lock()
 _cache = {}
 if CACHE.exists():
@@ -202,8 +207,21 @@ def _head_scan(path, limit=60):
 
 
 def _tail_scan(path, size, window=65536):
-    """끝부분만 읽어 마지막 모델과 마지막 시각을 얻는다."""
-    model, ts = "", ""
+    """끝부분만 읽어 마지막 모델·마지막 시각과 세션이 갈라졌는지를 얻는다.
+
+    세션이 갈라지면 CLI 가 옛 파일 끝에 자취를 남긴다:
+        {"type":"continued-in", "continuedInSessionId":"<새 세션 id>"}
+    갈라진 세션은 앞부분을 통째로 복사해가므로 제목·프로젝트가 원본과 똑같다.
+    이걸 안 보면 목록에 구분 불가능한 두 줄이 뜨고, 죽은 쪽을 골라 이어받으면
+    작업이 사라진 것처럼 보인다(2026-09-21 실제로 두 번 겪음).
+
+    `after` 는 그 자취 뒤에 실제 대화가 더 쌓였는지다.
+      0  — 갈라진 뒤 아무것도 안 썼다. 버려진 가지다
+      >0 — 양쪽 다 계속 썼다. 진짜로 갈라진 것이라 둘 다 살려둬야 한다
+    자취가 창(window) 밖으로 밀려났으면 그만큼 뒤에 내용이 많다는 뜻이라,
+    못 찾은 경우는 자연히 "갈라지지 않음"으로 떨어진다 — 그래도 결론은 맞다.
+    """
+    model, ts, cont, after = "", "", "", 0
     try:
         with io.open(path, "rb") as f:
             if size > window:
@@ -219,9 +237,15 @@ def _tail_scan(path, size, window=65536):
                 m = (d.get("message") or {}).get("model")
                 if m:
                     model = m
+                t = d.get("type")
+                if t == "continued-in":
+                    cont = d.get("continuedInSessionId") or ""
+                    after = 0            # 자취가 여러 번이면 마지막 것 기준
+                elif cont and t in ("user", "assistant"):
+                    after += 1
     except Exception:
         pass
-    return model, ts
+    return model, ts, cont, after
 
 
 def _pretty_project(cwd, fallback):
@@ -271,21 +295,30 @@ def scan_sessions(limit=60):
     files.sort(reverse=True)
 
     dirty = False
+    twins = set()        # 진짜로 갈라진 세션들 — 양쪽 다 목록에 남기되 표시해준다
     with _cache_lock:
         for mtime, size, f in files:
             if len(out) >= limit:
                 break
             key = str(f)
             hit = _cache.get(key)
-            if not hit or hit.get("mtime") != mtime or hit.get("size") != size:
+            if (not hit or hit.get("mtime") != mtime or hit.get("size") != size
+                    or hit.get("v") != _CACHE_VER):
                 title, cwd = _head_scan(f)
-                model, ts = _tail_scan(f, size)
+                model, ts, cont, after = _tail_scan(f, size)
                 hit = {"mtime": mtime, "size": size, "title": title,
-                       "cwd": cwd, "model": model, "ts": ts}
+                       "cwd": cwd, "model": model, "ts": ts,
+                       "cont": cont, "after": after, "v": _CACHE_VER}
                 _cache[key] = hit
                 dirty = True
             if not hit["title"]:
                 continue          # 사용자 발화가 없는 세션(열자마자 닫은 것)은 목록에서 뺀다
+            cont = hit.get("cont") or ""
+            if cont and not hit.get("after"):
+                continue          # 이어받은 세션한테 자리를 넘기고 끝난 가지다 (_tail_scan 참고)
+            if cont:
+                twins.add(f.stem)
+                twins.add(cont)
             out.append({
                 "id": f.stem,
                 "title": hit["title"],
@@ -297,6 +330,19 @@ def scan_sessions(limit=60):
             })
         if dirty:
             _flush_cache()
+    # 갈라진 세션은 앞부분을 복사해가니 제목도 프로젝트도 똑같다. 목록에서 구분이 안 되는
+    # 게 문제의 본체이므로, 마커를 못 본 경우까지 잡으려면 증상 쪽을 본다.
+    # (갈라진 뒤에도 한참 더 쓴 세션은 마커가 _tail_scan 의 창 밖으로 밀려나 안 잡힌다)
+    seen = {}
+    for row in out:
+        seen.setdefault((row["title"], row["project"]), []).append(row)
+    for group in seen.values():
+        if len(group) > 1:
+            for row in group:
+                row["branched"] = True
+    for row in out:
+        if row["id"] in twins:
+            row["branched"] = True
     return out
 
 

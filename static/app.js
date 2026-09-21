@@ -256,6 +256,7 @@ function renderSessions() {
         <span class="p">${esc(s.project || "")}</span>
         <span>${ago(s.mtime)}</span>
         ${s.model ? `<span>${esc(s.model)}</span>` : ""}
+        ${s.branched ? `<span class="branch" title="이 제목으로 갈라진 세션이 또 있다. 마지막 시각을 보고 고를 것">⑂ 갈라짐</span>` : ""}
       </div>
     </div>`).join("");
   $("#sessions").onclick = (e) => {
