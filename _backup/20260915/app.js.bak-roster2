@@ -412,36 +412,6 @@ const LIVE = new Set(["active", "listening"]);          // listening = 대기 �
 const STATUS_KO = { active: "작업 중", listening: "대기 중", blocked: "승인 대기",
                     inactive: "꺼짐", unknown: "알 수 없음" };
 
-// hcom 이 남기는 상태 맥락. '대기 중'이 두 가지라서 이걸 안 보면 왜 안 움직이는지 모른다:
-// 할 일이 없어 쉬는 것과, 입력창에 글만 꽂히고 엔터가 안 눌린 것.
-const CTX_KO = {
-  "tui:prompt-has-text": { ko: "엔터 안 눌림", bad: true,
-    why: "보낸 글이 입력창에 꽂힌 채로 있어. 그 탭에 가서 Enter 를 눌러야 움직여" },
-  "launch_blocked": { ko: "시작 못 함", bad: true,
-    why: "뜨다가 멈췄어 — 폴더 신뢰 여부 같은 걸 묻는 중일 수 있어. 그 탭을 직접 봐" },
-  "prompt": { ko: "지시 읽는 중" },
-  "ready_observed": { ko: "준비됨" },
-  "": { ko: "" },
-};
-
-function ctxOf(a) {
-  const c = a.ctx || "";
-  if (CTX_KO[c]) return CTX_KO[c];
-  if (c.startsWith("tool:")) return { ko: c.slice(5) + " 쓰는 중" };
-  if (c.startsWith("tui:")) return { ko: c.slice(4) };
-  return { ko: c };
-}
-
-function agoKo(sec) {
-  if (!sec) return "";
-  const d = Math.floor(Date.now() / 1000 - sec);
-  if (d < 0) return "";
-  if (d < 60) return "방금";
-  if (d < 3600) return Math.floor(d / 60) + "분 전";
-  if (d < 86400) return Math.floor(d / 3600) + "시간 전";
-  return Math.floor(d / 86400) + "일 전";
-}
-
 function newChatPane() {
   const id = "h" + ++_chatSeq;
   const wrap = document.createElement("div");
@@ -453,46 +423,27 @@ function newChatPane() {
     </div>
     <div class="chat-log"></div>
     <div class="chat-err"></div>
-    <div class="chat-to-tag"></div>
     <div class="chat-input">
-      <textarea rows="1" placeholder="모두에게 — @이름 으로 시작하면 그 애한테만 · Enter 전송, Shift+Enter 줄바꿈"></textarea>
+      <textarea rows="1" placeholder="모두에게 — Enter 전송, Shift+Enter 줄바꿈"></textarea>
       <button class="primary">보내기</button>
     </div>`;
 
   const pane = { id, kind: "chat", title: "에이전트 대화", el: wrap, alive: true,
                  lastId: 0, items: [], agents: [], stopped: [], tools: [],
-                 sel: {}, toolSig: "", pending: {}, dropping: {},
-                 me: "bigboss", err: "", timer: null };
-
-  let _err = "";                          // 에러를 넣은 시각을 같이 기억한다
-  Object.defineProperty(pane, "err", {
-    get: () => _err, set: (v) => { _err = v || ""; pane.errAt = Date.now(); },
-  });
+                 pending: {}, me: "bigboss", err: "", timer: null };
 
   const ta = wrap.querySelector("textarea");
   const btn = wrap.querySelector(".chat-input button");
   const log = wrap.querySelector(".chat-log");
   const send = async () => {
-    const raw = ta.value.trim();
-    if (!raw) return;
-    // 맨 앞의 @이름들 = 이 사람한테만. 방에 있는 이름일 때만 수신자로 본다
-    // (그냥 글자로 넘기면 hcom 이 전원에게 뿌린다)
-    const known = new Set(pane.agents.map((a) => a.name));
-    const targets = [];
-    let text = raw;
-    for (;;) {
-      const m = text.match(/^@([a-z0-9_]+)(?:[,\s]+|$)/i);
-      if (!m || !known.has(m[1])) break;
-      targets.push(m[1]);
-      text = text.slice(m[0].length);
-    }
-    if (!text.trim()) { pane.err = "보낼 내용이 없어"; paintChat(pane); return; }
+    const text = ta.value.trim();
+    if (!text) return;
     ta.value = ""; ta.style.height = "auto";
     btn.disabled = true;
     try {
       const r = await (await fetch("/api/hcom/send", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, targets }),
+        body: JSON.stringify({ text }),
       })).json();
       if (r.error) { pane.err = r.error; paintChat(pane); }
       else { pane.err = ""; pollChat(pane); }
@@ -507,23 +458,12 @@ function newChatPane() {
   ta.oninput = () => {                   // 입력줄이 내용만큼 자란다 (5줄까지)
     ta.style.height = "auto";
     ta.style.height = Math.min(ta.scrollHeight, 110) + "px";
-    const known = new Set(pane.agents.map((a) => a.name));
-    const to = [];
-    let t = ta.value.trim();
-    for (;;) {
-      const m = t.match(/^@([a-z0-9_]+)(?:[,\s]+|$)/i);
-      if (!m || !known.has(m[1])) break;
-      to.push(m[1]); t = t.slice(m[0].length);
-    }
-    const tag = wrap.querySelector(".chat-to-tag");
-    tag.textContent = to.length ? `→ ${to.join(", ")} 한테만` : "";
-    tag.classList.toggle("on", to.length > 0);
   };
 
   const roster = wrap.querySelector(".chat-roster");
   roster.onclick = (e) => {
     const c = e.target.closest(".rchip");
-    if (!c || c.disabled || c.dataset.dis) return;
+    if (!c || c.disabled) return;
     if (c.dataset.act === "mention") {   // 켜진 칩 → 입력줄에 @이름
       ta.value = (ta.value ? ta.value.replace(/\s*$/, " ") : "") + "@" + c.dataset.arg + " ";
       ta.focus();
@@ -531,34 +471,6 @@ function newChatPane() {
       summon(pane, c.dataset.act, c.dataset.arg);
     }
   };
-  // 우클릭 = 내보내기. 켜져 있으면 hcom 에서 내보내고(세션은 남아 다시 깨울 수 있다),
-  // 이미 꺼진 애면 목록에서만 지운다. 불러오기 도구 칩은 지울 게 없으니 그냥 둔다.
-  roster.oncontextmenu = (e) => {
-    const c = e.target.closest(".rchip");
-    if (!c) return;
-    const act = c.dataset.act;
-    if (act !== "mention" && act !== "resume") return;
-    e.preventDefault();
-    dropAgent(pane, c.dataset.arg, act === "mention");
-  };
-
-  // 모델·강도 고르기. 모델을 바꾸면 그 모델이 못 받는 강도는 모델 기본값으로 돌린다
-  wrap.querySelector(".roster-tools").onchange = (e) => {
-    const sel = e.target.closest("select[data-tool]");
-    if (!sel) return;
-    const tool = sel.dataset.tool;
-    const cur = pane.sel[tool] || (pane.sel[tool] = { model: "", effort: "" });
-    cur[sel.dataset.k] = sel.value;
-    if (sel.dataset.k === "model") {
-      const t = pane.tools.find((x) => x.tool === tool);
-      const m = t && (t.models || []).find((x) => x.id === cur.model);
-      if (m && !m.efforts.includes(cur.effort)) cur.effort = m.default_effort || m.efforts[0] || "";
-    }
-    pane.toolSig = "";
-    sel.blur();
-    paintChat(pane);
-  };
-
   // 끌어다 놓기: 우리 칩에서 시작한 드래그만 받는다 (파일·글자 드롭은 무시)
   roster.ondragstart = (e) => {
     const c = e.target.closest('.rchip[draggable="true"]');
@@ -600,10 +512,7 @@ async function summon(pane, act, arg) {
   pane.err = "";
   paintChat(pane);
   try {
-    const pick = pane.sel[arg] || {};
-    const body = act === "launch"
-      ? { tool: arg, cwd: $("#proj").value, model: pick.model || "", effort: pick.effort || "" }
-      : { name: arg };
+    const body = act === "launch" ? { tool: arg, cwd: $("#proj").value } : { name: arg };
     const r = await (await fetch(`/api/hcom/${act}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -611,37 +520,6 @@ async function summon(pane, act, arg) {
     if (r.error) { pane.err = r.error; delete pane.pending[key]; }
   } catch (ex) { pane.err = String(ex); delete pane.pending[key]; }
   paintChat(pane);
-}
-
-// 우클릭으로 내보내기. live=켜져 있는 애(hcom kill) / 아니면 목록에서만 지우기.
-async function dropAgent(pane, name, live) {
-  if (pane.dropping[name]) return;
-  pane.dropping[name] = true;
-  pane.err = "";
-  paintChat(pane);
-  try {
-    const r = await (await fetch(live ? "/api/hcom/kill" : "/api/hcom/hide", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    })).json();
-    if (r.error) pane.err = r.error;
-    else if (live) {
-      pane.err = `${name} 내보냈어 — 꺼짐 칩을 누르면 하던 자리에서 다시 깨운다`;
-      closeAgentPane(name);
-    } else {
-      pane.err = `${name} 목록에서 지웠어`;
-    }
-  } catch (ex) { pane.err = String(ex); }
-  delete pane.dropping[name];
-  pollChat(pane);
-}
-
-// 내보낸 애가 쓰던 터미널 탭도 같이 닫는다 (죽은 창만 남으면 그게 더 불편하다)
-function closeAgentPane(name) {
-  const ids = [];
-  for (const [id, p] of panes)
-    if (p.agent && (p.title || "").split(" · ")[0] === name) ids.push(id);
-  for (const id of ids) closePane(id);
 }
 
 // 부르는 중 표시는 실제로 방에 들어오면 지운다. 안 들어오면 40초 뒤 포기.
@@ -652,25 +530,8 @@ function settlePending(pane) {
     const arrived = act === "launch"
       ? pane.agents.some((a) => a.tool === arg && a.created * 1000 >= at - 5000)
       : pane.agents.some((a) => a.name === arg && LIVE.has(a.status));
-    if (arrived) delete pane.pending[key];
-    else if (now - at > 40000) {
-      delete pane.pending[key];
-      pane.err = `${arg} 이(가) 40초 안에 안 떴어 — 새로 생긴 터미널 탭이 있는지 보고, 없으면 ~/.hcom/helm_spool/helm_open.log 확인`;
-    }
+    if (arrived || now - at > 40000) delete pane.pending[key];
   }
-}
-
-// hcom 이 "이 스크립트를 터미널에서 돌려줘"라고 남긴 걸 HELM 터미널 탭으로 연다.
-// 대화창을 가리지 않게: 한 칸이면 두 칸으로 벌리고, 대화창이 없는 칸에 올린다.
-async function openAgentPane(chat, sp) {
-  if (layout === 1) setLayout(2);
-  const chatSlot = slots.indexOf(chat.id);
-  let target = slots.findIndex((x, i) => i !== chatSlot && !x);
-  if (target < 0) target = slots.findIndex((x, i) => i !== chatSlot);
-  if (target >= 0) focusSlot = target;
-  await newPane({ hcom_script: sp.script, cwd: sp.cwd || undefined,
-                  title: [sp.name, sp.tool].filter(Boolean).join(" · ") || "에이전트",
-                  model: sp.model || sp.tool || "agent", effort: sp.effort || null });
 }
 
 async function pollChat(pane) {
@@ -678,16 +539,13 @@ async function pollChat(pane) {
   try {
     const r = await (await fetch(`/api/hcom/state?after=${pane.lastId}`)).json();
     if (!r.ok) { pane.err = r.error || "hcom 을 읽을 수 없어"; paintChat(pane); return; }
-    if (pane.err && Date.now() - pane.errAt > 8000) pane.err = "";
+    if (!Object.keys(pane.pending).length) pane.err = "";
     pane.me = r.me || pane.me;
     const sig = (xs) => xs.map((a) => a.name + a.status).join("|");
     const before = sig(pane.agents);
     pane.agents = (r.agents || []).filter((a) => a.name !== pane.me);   // 나는 참여자에서 뺀다
     pane.stopped = r.stopped || [];
     pane.tools = r.tools || [];
-    for (const t of pane.tools)                 // 처음 보는 도구는 서버가 고른 값(마지막 선택 / codex 기본)으로
-      if (!pane.sel[t.tool] && t.choice) pane.sel[t.tool] = { ...t.choice };
-    for (const sp of r.spawns || []) openAgentPane(pane, sp);
     settlePending(pane);
     if (r.messages && r.messages.length) {
       pane.items.push(...r.messages);
@@ -709,36 +567,22 @@ function paintChat(pane) {
 
   log.innerHTML = pane.items.map((m) => {
     if (m.kind === "life")
-      return `<div class="chat-sys">${esc(m.from)} ${m.text === "created" || m.text === "ready" ? "들어옴" : "나감"}</div>`;
+      return `<div class="chat-sys">${esc(m.from)} ${m.text === "created" ? "들어옴" : "나감"}</div>`;
     const mine = m.from === pane.me;
     const to = (m.to && m.to.length) ? m.to.join(", ")
              : (m.scope === "broadcast" ? "전체" : "");
-    let seen = "";
-    if (mine && m.to && m.to.length) {
-      const late = m.to.filter((n) => {
-        const a = pane.agents.find((x) => x.name === n);
-        return a && (a.seen || 0) < m.id;
-      });
-      seen = late.length
-        ? `<div class="chat-seen wait">아직 안 읽음 · ${esc(late.join(", "))}</div>`
-        : `<div class="chat-seen">읽음</div>`;
-    }
     return `<div class="chat-row ${mine ? "mine" : ""}">
         <div class="chat-msg">
           <div class="chat-who">${esc(m.from)}${to ? ` <span class="chat-to">→ ${esc(to)}</span>` : ""}</div>
           <div class="chat-text">${esc(m.text)}</div>
-          ${seen}
         </div></div>`;
   }).join("") || `<div class="hollow">아직 대화가 없어 — 위쪽 <b>+ 도구</b>를 누르거나 여기로 끌어다 놔서 에이전트를 불러와</div>`;
   if (stuck) log.scrollTop = log.scrollHeight;
 
   const ready = new Set(pane.tools.filter((t) => t.ready).map((t) => t.tool));
-  // soft = 못 누르게는 하되 disabled 는 안 건다. disabled 버튼은 우클릭도 안 먹어서
-  // 정작 지우고 싶은 (깨울 수 없는) 칩을 못 지운다.
-  const chip = ({ cls, act, arg, drag, disabled, soft, title, body }) =>
-    `<button class="rchip ${cls}${disabled && soft ? " dis" : ""}" data-act="${act}" data-arg="${esc(arg)}"
-       ${drag && !disabled ? 'draggable="true"' : ""}
-       ${disabled ? (soft ? 'data-dis="1"' : "disabled") : ""}
+  const chip = ({ cls, act, arg, drag, disabled, title, body }) =>
+    `<button class="rchip ${cls}" data-act="${act}" data-arg="${esc(arg)}"
+       ${drag && !disabled ? 'draggable="true"' : ""} ${disabled ? "disabled" : ""}
        title="${esc(title)}">${body}</button>`;
   const face = (name, tool, note) =>
     `<span class="dot"></span><span class="rname">${esc(name)}</span>` +
@@ -748,89 +592,45 @@ function paintChat(pane) {
   const chips = pane.agents.map((a) => {
     const live = LIVE.has(a.status);
     const waking = pane.pending["resume:" + a.name];
-    const going = pane.dropping[a.name];
-    if (live || a.status === "blocked") {
-      const c = ctxOf(a);
-      const stuck = c.bad || a.status === "blocked";
-      const busy = a.status === "active";
-      const note = going ? "내보내는 중…"
-                 : c.bad ? c.ko
-                 : a.status === "blocked" ? (c.ko || "승인 대기")
-                 : busy ? (c.ko || "작업 중")
-                 : c.ko || "대기";
-      return chip({ cls: (stuck ? "warn" : "on") + (busy ? " busy" : "") + (going ? " wait" : ""),
-                    act: "mention", arg: a.name, disabled: going, soft: true,
-                    title: [`${a.tool} · ${STATUS_KO[a.status] || a.status}`,
-                            c.ko && `지금: ${c.ko}`,
-                            c.why, a.detail, agoKo(a.at) && `마지막 움직임 ${agoKo(a.at)}`,
-                            "눌러서 @멘션 · 우클릭하면 내보낸다"].filter(Boolean).join("\n"),
-                    body: face(a.name, a.tool, note) });
-    }
+    if (live || a.status === "blocked")
+      return chip({ cls: live ? "on" : "warn", act: "mention", arg: a.name,
+                    title: `${STATUS_KO[a.status] || a.status} · 눌러서 @멘션`,
+                    body: face(a.name, a.tool, a.status === "blocked" ? "승인 대기" : a.tool) });
     const can = ready.has(a.tool);
-    return chip({ cls: "off" + (waking || going ? " wait" : ""), act: "resume", arg: a.name, drag: can,
-                  disabled: !can || waking || going, soft: true,
-                  title: (can ? "꺼짐 · 누르거나 끌어다 놓으면 깨운다" : `${a.tool} 훅이 없어 못 깨움`)
-                         + " · 우클릭하면 목록에서 지운다",
-                  body: face(a.name, a.tool, going ? "지우는 중…" : waking ? "깨우는 중…" : "") });
+    return chip({ cls: "off" + (waking ? " wait" : ""), act: "resume", arg: a.name, drag: can,
+                  disabled: !can || waking,
+                  title: can ? "꺼짐 · 누르거나 끌어다 놓으면 깨운다" : `${a.tool} 훅이 없어 못 깨움`,
+                  body: face(a.name, a.tool, waking ? "깨우는 중…" : "") });
   });
   for (const a of pane.stopped) {
     const waking = pane.pending["resume:" + a.name];
-    const going = pane.dropping[a.name];
     const can = a.resumable && ready.has(a.tool);
-    chips.push(chip({ cls: "off" + (waking || going ? " wait" : ""), act: "resume", arg: a.name, drag: can,
-                      disabled: !can || waking || going, soft: true,
-                      title: (can ? "멈춤 · 누르거나 끌어다 놓으면 깨운다"
-                           : !a.resumable ? "되살릴 세션이 없어" : `${a.tool} 훅이 없어 못 깨움`)
-                             + " · 우클릭하면 목록에서 지운다",
-                      body: face(a.name, a.tool, going ? "지우는 중…" : waking ? "깨우는 중…" : "") }));
+    chips.push(chip({ cls: "off" + (waking ? " wait" : ""), act: "resume", arg: a.name, drag: can,
+                      disabled: !can || waking,
+                      title: can ? "멈춤 · 누르거나 끌어다 놓으면 깨운다"
+                           : !a.resumable ? "되살릴 세션이 없어" : `${a.tool} 훅이 없어 못 깨움`,
+                      body: face(a.name, a.tool, waking ? "깨우는 중…" : "") }));
   }
   pane.el.querySelector(".roster-agents").innerHTML =
     chips.join("") || `<span class="rempty">참여자 없음</span>`;
 
-  // 오른쪽: 새로 불러올 도구 + 모델·강도.
-  // 2초마다 다시 그리면 열어 둔 드롭다운이 닫힌다 → 바뀐 게 있을 때만, 고르는 중이 아닐 때만 그린다
-  const box = pane.el.querySelector(".roster-tools");
-  const sig = JSON.stringify([pane.tools, Object.keys(pane.pending), pane.sel, $("#proj") && $("#proj").value]);
-  const picking = box.contains(document.activeElement) && document.activeElement.tagName === "SELECT";
-  if (sig !== pane.toolSig && !picking) {
-    pane.toolSig = sig;
-    const where = shorten($("#proj") ? $("#proj").value : "", 40);
-    box.innerHTML = pane.tools.length
-      ? `<span class="rlbl">불러오기</span>` + pane.tools.map((t) => {
-          const busy = pane.pending["launch:" + t.tool];
-          const pick = pane.sel[t.tool] || {};
-          const models = t.ready ? (t.models || []) : [];
-          const m = models.find((x) => x.id === pick.model);
-          const opt = (v, label, on) => `<option value="${esc(v)}" ${on ? "selected" : ""}>${esc(label)}</option>`;
-          const pickers = models.length
-            ? `<select class="rsel" data-tool="${esc(t.tool)}" data-k="model" title="모델" ${busy ? "disabled" : ""}>
-                 ${models.map((x) => opt(x.id, x.label, x.id === pick.model)).join("")}</select>` +
-              (m && m.efforts.length
-                ? `<select class="rsel eff" data-tool="${esc(t.tool)}" data-k="effort" title="강도" ${busy ? "disabled" : ""}>
-                     ${m.efforts.map((e) => opt(e, e, e === pick.effort)).join("")}</select>`
-                : "")
-            : "";
-          const what = [m && m.label, pick.effort].filter(Boolean).join(" · ");
-          return `<span class="tgroup ${t.ready ? "" : "dis"}">` + chip({
-              cls: "tool" + (busy ? " wait" : ""), act: "launch", arg: t.tool,
-              drag: t.ready, disabled: !t.ready || busy,
-              title: t.ready ? `${what ? what + " 로 " : ""}새로 부른다 · 누르거나 대화창으로 끌어다 놓기 · 시작 폴더: ${where}`
-                             : `훅이 없어 불러와도 대화를 못 받아 (hcom hooks add ${t.tool})`,
-              body: busy ? `<span class="rname">${esc(t.tool)} 부르는 중…</span>`
-                         : `<span class="plus">+</span><span class="rname">${esc(t.tool)}</span>` })
-            + pickers + `</span>`;
-        }).join("")
-      : `<span class="rempty">불러올 도구 없음</span>`;
-  }
-
-  const jammed = pane.agents
-    .map((a) => [a, ctxOf(a)])
-    .filter(([a, c]) => c.bad || a.status === "blocked")
-    .map(([a, c]) => `${a.name}: ${c.why || c.ko || STATUS_KO[a.status] || a.status}`);
+  // 오른쪽: 새로 불러올 도구
+  const where = shorten($("#proj") ? $("#proj").value : "", 40);
+  pane.el.querySelector(".roster-tools").innerHTML = pane.tools.length
+    ? `<span class="rlbl">불러오기</span>` + pane.tools.map((t) => {
+        const busy = pane.pending["launch:" + t.tool];
+        return chip({ cls: "tool" + (busy ? " wait" : ""), act: "launch", arg: t.tool,
+                      drag: t.ready, disabled: !t.ready || busy,
+                      title: t.ready ? `누르거나 대화창으로 끌어다 놓으면 새로 부른다 · 시작 폴더: ${where}`
+                                     : `훅이 없어 불러와도 대화를 못 받아 (hcom hooks add ${t.tool})`,
+                      body: busy ? `<span class="rname">${esc(t.tool)} 부르는 중…</span>`
+                                 : `<span class="plus">+</span><span class="rname">${esc(t.tool)}</span>` });
+      }).join("")
+    : `<span class="rempty">불러올 도구 없음</span>`;
 
   const eb = pane.el.querySelector(".chat-err");
-  eb.textContent = pane.err || jammed.join(" / ") || "";
-  eb.classList.toggle("on", !!(pane.err || jammed.length));
+  eb.textContent = pane.err || "";
+  eb.classList.toggle("on", !!pane.err);
 }
 
 async function loadTree(pane, path) {
@@ -982,7 +782,6 @@ function render() {
           ${p.perm && p.perm !== "manual"
             ? `<span class="chip ${(permOf(p.perm)||{}).warn ? "warn" : ""}">${esc((permOf(p.perm)||{}).label || p.perm)}</span>` : ""}
           ${p.resumed ? `<span class="chip">이어감</span>` : ""}
-          ${p.agent ? `<span class="chip">hcom 에이전트</span>` : ""}
           <span class="chip">${esc(shorten(p.cwd, 28))}</span>
         </div>`;
       slot.appendChild(p.el);
@@ -995,7 +794,7 @@ function render() {
 
   paintUsage();
   const fp = panes.get(slots[focusSlot]);
-  const isTerm = fp && fp.kind === "term" && !fp.agent;   // hcom 에이전트 탭은 claude 가 아니다
+  const isTerm = fp && fp.kind === "term";
   $("#paneModel").classList.toggle("hidden", !isTerm);
   $("#paneEffort").classList.toggle("hidden", !isTerm || !takesEffort(fp.model));
   if (isTerm) {

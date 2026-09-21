@@ -12,7 +12,6 @@ import json
 import time
 import queue
 import shutil
-import sys
 import sqlite3
 import ctypes
 import ctypes.wintypes
@@ -410,9 +409,8 @@ class Pane:
     MAX_BUF = 400_000
 
     def __init__(self, pane_id, cwd, model, resume=None, cols=120, rows=30,
-                 argv=None, effort=None, perm=None, agent=False):
+                 argv=None, effort=None, perm=None):
         self.id = pane_id
-        self.agent = agent         # hcom 에이전트(codex 등) 탭 — claude 세션이 아니다
         self.cwd = cwd
         self.model = model
         self.effort = effort
@@ -674,35 +672,15 @@ def create_pane():
     if not Path(cwd).is_dir():
         return jsonify({"error": f"폴더가 없어: {cwd}"}), 400
 
-    # hcom 에이전트 탭: 임의 argv 대신 hcom launch 폴더 안의 .ps1 만 받아 서버가 argv 를 만든다
-    argv, agent = body.get("argv"), False
-    if body.get("hcom_script"):
-        sp = Path(body["hcom_script"])
-        try:
-            ok = (sp.suffix.lower() == ".ps1" and sp.is_file()
-                  and sp.resolve().parent == (HCOM_DIR / ".tmp" / "launch").resolve())
-        except OSError:
-            ok = False
-        if not ok:
-            return jsonify({"error": f"hcom 실행 스크립트가 아니야: {sp}"}), 400
-        argv = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(sp)]
-        agent = True
-        effort = body.get("effort")          # codex 강도는 claude 모델표와 무관하다
-        perm = None
-
     with _pane_lock:
         _pane_seq += 1
         pid = f"p{_pane_seq}"
     try:
         PANES[pid] = Pane(pid, cwd, model, resume,
                           cols=int(body.get("cols", 120)), rows=int(body.get("rows", 30)),
-                          argv=argv, effort=effort, perm=perm, agent=agent)
+                          argv=body.get("argv"), effort=effort, perm=perm)
     except Exception as ex:
         return jsonify({"error": f"실행 실패: {ex}"}), 500
-
-    if agent:        # 에이전트 탭은 claude 새 세션 기본값(last_model 등)을 건드리지 않는다
-        return jsonify({"id": pid, "title": title, "cwd": cwd, "model": model,
-                        "effort": effort, "perm": None, "resumed": False, "agent": True})
 
     cfg = load_config()
     # 등록된 폴더일 때만 기억한다 (아니면 다음 부팅 때 select에 없는 값이 들어간다)
@@ -751,8 +729,7 @@ def switch_model(pid):
 #   보내려면 identity 가 있어야 한다("hcom send" 는 이름 없이는 거부). 사람 자리는 bigboss.
 HCOM_DIR = Path(os.environ.get("HCOM_DIR") or Path.home() / ".hcom")
 HCOM_DB = HCOM_DIR / "hcom.db"
-HCOM_ME = "bigboss"
-_HCOM_LIVE = ("active", "listening", "blocked")          # hcom 이 권위자로 취급하는 이름이라 사람 자리로 쓴다
+HCOM_ME = "bigboss"          # hcom 이 권위자로 취급하는 이름이라 사람 자리로 쓴다
 
 
 def _hcom_exe():
@@ -801,66 +778,13 @@ def _hcom_tools():
         m = re.match(r"\s*([^:]+):\s+installed", line)   # "not installed" 은 안 걸린다
         if m:
             hooked.add(m.group(1).strip())
-    choices = load_config().get("hcom_choice", {})
-    val = []
-    for label, tool in _HCOM_TOOLS:
-        if label not in hooked and not shutil.which(tool):
-            continue
-        models = _codex_models() if tool == "codex" else []
-        val.append({"tool": tool, "ready": label in hooked, "models": models,
-                    "choice": _pick_choice(models, choices.get(tool), tool)})
+    val = [{"tool": tool, "ready": label in hooked}
+           for label, tool in _HCOM_TOOLS if label in hooked or shutil.which(tool)]
     _hcom_tools_cache.update(at=time.time(), val=val)
     return val
 
 
-CODEX_HOME = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
-
-
-def _codex_models():
-    """codex 가 받아 둔 모델 목록(models_cache.json)에서 목록에 보이는 것만.
-    이름을 코드에 박지 않는다 — codex 가 갱신하면 따라간다."""
-    try:
-        d = json.loads((CODEX_HOME / "models_cache.json").read_text(encoding="utf-8"))
-    except Exception:
-        return []
-    out = []
-    for m in sorted(d.get("models") or [], key=lambda m: m.get("priority", 999)):
-        if m.get("visibility") != "list" or not m.get("slug"):
-            continue
-        efforts = [e.get("effort") if isinstance(e, dict) else e
-                   for e in (m.get("supported_reasoning_levels") or [])]
-        out.append({"id": m["slug"], "label": m.get("display_name") or m["slug"],
-                    "efforts": [e for e in efforts if e],
-                    "default_effort": m.get("default_reasoning_level") or ""})
-    return out
-
-
-def _codex_defaults():
-    """~/.codex/config.toml 맨 위의 model / model_reasoning_effort (섹션 전까지만 본다)."""
-    try:
-        head = (CODEX_HOME / "config.toml").read_text(encoding="utf-8").split("\n[", 1)[0]
-    except Exception:
-        return None, None
-    m = re.search(r'^model\s*=\s*"([^"]+)"', head, re.M)
-    e = re.search(r'^model_reasoning_effort\s*=\s*"([^"]+)"', head, re.M)
-    return (m.group(1) if m else None), (e.group(1) if e else None)
-
-
-def _pick_choice(models, saved, tool):
-    """마지막으로 고른 값 → 없으면 codex 기본 설정 → 없으면 목록 첫 번째. 목록에 없는 값은 버린다."""
-    if not models:
-        return {"model": "", "effort": ""}
-    saved = saved or {}
-    dm, de = _codex_defaults() if tool == "codex" else (None, None)
-    ids = {m["id"]: m for m in models}
-    mid = next((x for x in (saved.get("model"), dm) if x in ids), models[0]["id"])
-    m = ids[mid]
-    eff = next((x for x in (saved.get("effort"), de if mid == dm else None, m["default_effort"])
-                if x in m["efforts"]), m["efforts"][0] if m["efforts"] else "")
-    return {"model": mid, "effort": eff}
-
-
-def _hcom_spawn(args, cwd=None, wait=20, env=None):
+def _hcom_spawn(args, cwd=None, wait=20):
     """에이전트를 띄우는 명령은 새 터미널을 열고 오래 붙어 있을 수 있다.
     wait 초 안에 끝나면 그 결과를, 넘기면 '시작됨'으로 본다 — 죽이지 않는다."""
     exe = _hcom_exe()
@@ -869,7 +793,7 @@ def _hcom_spawn(args, cwd=None, wait=20, env=None):
     try:
         pr = subprocess.Popen([exe] + args, cwd=cwd, stdin=subprocess.DEVNULL,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True, encoding="utf-8", errors="replace", env=env or child_env(),
+                              text=True, encoding="utf-8", errors="replace", env=child_env(),
                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except Exception as ex:
         return False, str(ex)
@@ -925,18 +849,13 @@ def hcom_state():
                                  "text": d.get("text", ""),
                                  "scope": d.get("scope", ""),
                                  "to": d.get("delivered_to") or []})
-                elif d.get("action") in ("created", "ready", "stopped", "killed"):
+                elif d.get("action") in ("created", "stopped", "killed"):
                     msgs.append({"id": eid, "ts": ts, "kind": "life",
                                  "from": inst, "text": d.get("action")})
-            for (name, tool, status, directory, created,
-                 ctx, detail, stime, seen) in con.execute(
-                    "select name,tool,status,directory,created_at,"
-                    "status_context,status_detail,status_time,last_event_id "
-                    "from instances order by created_at"):
+            for name, tool, status, directory, created in con.execute(
+                    "select name,tool,status,directory,created_at from instances order by created_at"):
                 agents.append({"name": name, "tool": tool, "status": status,
-                               "dir": directory or "", "created": created or 0,
-                               "ctx": ctx or "", "detail": (detail or "")[:200],
-                               "at": stime or 0, "seen": seen or 0})
+                               "dir": directory or "", "created": created or 0})
             # 멈춘 에이전트 = 마지막 life 이벤트가 stopped/killed 이고 지금 instances 에 없는 것.
             # stopped 이벤트의 snapshot 에 tool·session_id 가 들어 있다 (session_id 가 있어야 되살린다)
             current = {a["name"] for a in agents}
@@ -961,57 +880,8 @@ def hcom_state():
     except Exception as ex:
         return jsonify({"ok": False, "error": f"hcom.db 읽기 실패: {ex}",
                         "messages": [], "agents": [], "last_id": after})
-    agents, stopped = _drop_hidden(agents, stopped)
     return jsonify({"ok": True, "messages": msgs, "agents": agents, "stopped": stopped,
-                    "tools": _hcom_tools(), "spawns": _take_spawns(),
-                    "last_id": last, "me": HCOM_ME})
-
-
-def _drop_hidden(agents, stopped):
-    """목록에서 지운 애들을 빼고 준다. 같은 이름이 다시 살아 돌아오면 숨김을 푼다
-    (hcom 은 이름을 돌려쓴다 — 계속 숨겨 두면 새로 부른 애가 안 보인다)."""
-    hidden = set(load_config().get("hcom_hidden") or [])
-    if not hidden:
-        return agents, stopped
-    back = hidden & {a["name"] for a in agents if a["status"] in _HCOM_LIVE}
-    if back:
-        cfg = load_config()
-        cfg["hcom_hidden"] = [n for n in (cfg.get("hcom_hidden") or []) if n not in back]
-        save_config(cfg)
-        hidden -= back
-    return ([a for a in agents if a["name"] not in hidden],
-            [x for x in stopped if x["name"] not in hidden])
-
-
-def _hcom_name(body):
-    name = (body.get("name") or "").strip()
-    return name if re.fullmatch(r"[a-z0-9_]+", name) and name != HCOM_ME else None
-
-
-@app.route("/api/hcom/kill", methods=["POST"])
-def hcom_kill():
-    """켜져 있는 애를 방에서 내보낸다. 세션은 남아서 나중에 다시 깨울 수 있다."""
-    name = _hcom_name(request.get_json(force=True))
-    if not name:
-        return jsonify({"error": "이름이 이상해"}), 400
-    ok, out = _hcom_spawn(["kill", name], wait=15)
-    if not ok:
-        return jsonify({"error": out or "내보내기 실패"}), 500
-    return jsonify({"ok": True, "out": out})
-
-
-@app.route("/api/hcom/hide", methods=["POST"])
-def hcom_hide():
-    """이미 꺼진 애를 목록에서만 지운다. hcom.db 는 건드리지 않는다."""
-    name = _hcom_name(request.get_json(force=True))
-    if not name:
-        return jsonify({"error": "이름이 이상해"}), 400
-    cfg = load_config()
-    lst = [n for n in (cfg.get("hcom_hidden") or []) if n != name]
-    lst.append(name)
-    cfg["hcom_hidden"] = lst[-200:]
-    save_config(cfg)
-    return jsonify({"ok": True})
+                    "tools": _hcom_tools(), "last_id": last, "me": HCOM_ME})
 
 
 @app.route("/api/hcom/send", methods=["POST"])
@@ -1033,61 +903,6 @@ def hcom_send():
     return jsonify({"ok": True, "out": out})
 
 
-HELM_SPOOL = HCOM_DIR / "helm_spool"
-HCOM_OPEN = HERE / "hcom_open.py"
-
-
-def _helm_terminal_cmd():
-    """hcom 이 에이전트 창을 여는 대신 부를 명령. 역슬래시는 hcom 의 명령줄 쪼개기에
-    먹힐 수 있어 슬래시로 쓴다. 콘솔 창이 번쩍이지 않게 pythonw 를 쓴다."""
-    py = Path(sys.executable)
-    if py.with_name("pythonw.exe").exists():
-        py = py.with_name("pythonw.exe")
-    # {script} 는 빼면 안 된다 — hcom 은 {script} 없는 명령을 거부하고 조용히 기본 동작으로
-    # 빠져서(= 창 없이 실행) 에이전트가 화면에 안 보인다. cwd 는 공백이 있을 수 있어 맨 뒤에.
-    return (f"{py.as_posix()} {HCOM_OPEN.as_posix()} "
-            f"{{script}} {{instance_name}} {{tool}} {{cwd}}")
-
-
-def _hcom_env_for_helm():
-    env = child_env()
-    env["HCOM_TERMINAL"] = _helm_terminal_cmd()   # 이 실행에만. 전역 config.toml 은 그대로
-    env["HCOM_DIR"] = str(HCOM_DIR)
-    return env
-
-
-def _take_spawns():
-    """hcom_open.py 가 남긴 '이거 열어줘'를 집는다. 여러 패널이 동시에 물어도 한 번만 나가게
-    os.replace 로 먼저 차지한 쪽만 쓴다. 2분 지난 건 버린다(HELM 이 꺼져 있던 때 것)."""
-    out = []
-    if not HELM_SPOOL.is_dir():
-        return out
-    for f in sorted(HELM_SPOOL.glob("*.json")):
-        claim = f.with_suffix(".taken")
-        try:
-            os.replace(f, claim)
-        except OSError:
-            continue
-        try:
-            d = json.loads(claim.read_text(encoding="utf-8"))
-        except Exception:
-            d = None
-        try:
-            claim.unlink()
-        except OSError:
-            pass
-        if not d or time.time() - float(d.get("at") or 0) > 120:
-            continue
-        pending = _launch_notes.pop(d.get("tool") or "", None) or {}
-        out.append({"script": d.get("script", ""), "name": d.get("name", ""),
-                    "tool": d.get("tool", ""), "cwd": d.get("cwd", ""),
-                    "model": pending.get("model", ""), "effort": pending.get("effort", "")})
-    return out
-
-
-_launch_notes = {}      # tool → 방금 부를 때 고른 모델·강도 (탭 머리에 표시용)
-
-
 @app.route("/api/hcom/launch", methods=["POST"])
 def hcom_launch():
     body = request.get_json(force=True)
@@ -1101,27 +916,8 @@ def hcom_launch():
     cwd = body.get("cwd") or ""
     if not Path(cwd).is_dir():
         cwd = str(Path.home())
-
-    args = ["1", tool, "--dir", cwd]
-    model, effort = body.get("model") or "", body.get("effort") or ""
-    if t["models"]:
-        m = next((x for x in t["models"] if x["id"] == model), None)
-        if not m:
-            return jsonify({"error": f"목록에 없는 모델: {model}"}), 400
-        if effort and effort not in m["efforts"]:
-            return jsonify({"error": f"{model} 은 강도 {effort} 를 못 받아"}), 400
-        args += ["--model", model]
-        if effort and tool == "codex":
-            args += ["-c", f'model_reasoning_effort="{effort}"']
-        cfg = load_config()
-        cfg.setdefault("hcom_choice", {})[tool] = {"model": model, "effort": effort}
-        save_config(cfg)
-        _hcom_tools_cache["at"] = 0.0
-    _launch_notes[tool] = {"model": model, "effort": effort}
-
-    ok, out = _hcom_spawn(args, cwd=cwd, env=_hcom_env_for_helm())
+    ok, out = _hcom_spawn(["1", tool], cwd=cwd)
     if not ok:
-        _launch_notes.pop(tool, None)
         return jsonify({"error": out or "불러오기 실패"}), 500
     return jsonify({"ok": True, "out": out, "cwd": cwd})
 
@@ -1131,7 +927,7 @@ def hcom_resume():
     name = (request.get_json(force=True).get("name") or "").strip()
     if not re.fullmatch(r"[a-z0-9_]+", name) or name == HCOM_ME:
         return jsonify({"error": f"이름이 이상해: {name}"}), 400
-    ok, out = _hcom_spawn(["r", name], env=_hcom_env_for_helm())
+    ok, out = _hcom_spawn(["r", name])
     if not ok:
         return jsonify({"error": out or "깨우기 실패"}), 500
     return jsonify({"ok": True, "out": out})
@@ -1349,9 +1145,6 @@ def usage():
     """패널마다 지금 컨텍스트를 얼마나 먹었는지. 프론트가 몇 초마다 물어본다."""
     out = {}
     for pid, p in list(PANES.items()):
-        if p.agent:          # 폴더만 보고 찾으면 같은 폴더의 남의 claude 세션을 잡는다
-            out[pid] = {"tokens": None}
-            continue
         f = _session_file(p)
         info = _context_of(f) if f else None
         if not info:

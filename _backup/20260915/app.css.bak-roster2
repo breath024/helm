@@ -232,7 +232,7 @@ select option{background:var(--panel2);color:var(--fg)}
 }
 .rchip .dot{width:7px;height:7px;border-radius:50%;background:var(--dead);flex:none}
 .rchip .rtool{color:var(--dim);font-size:10.5px}
-.rchip:disabled,.rchip.dis{cursor:not-allowed}
+.rchip:disabled{cursor:not-allowed}
 .rchip[draggable="true"]{cursor:grab}
 .rchip[draggable="true"]:active{cursor:grabbing}
 
@@ -245,33 +245,13 @@ select option{background:var(--panel2);color:var(--fg)}
 /* 꺼짐: 흐리게, 점은 속 빈 원 */
 .rchip.off{opacity:.55;border-style:dashed}
 .rchip.off .dot{background:transparent;border:1.5px solid var(--dead)}
-.rchip.off:not(:disabled):not(.dis):hover{opacity:.9;border-color:var(--accent-dim)}
-.rchip.off:disabled,.rchip.off.dis{opacity:.3}
+.rchip.off:not(:disabled):hover{opacity:.9;border-color:var(--accent-dim)}
+.rchip.off:disabled{opacity:.3}
 /* 불러오기 도구 */
 .rchip.tool{border-color:var(--accent-dim);color:var(--accent)}
 .rchip.tool .plus{font-weight:700}
 .rchip.tool:not(:disabled):hover{background:var(--accent-dim);color:#f1e2d3}
 .rchip.tool:disabled{opacity:.35;color:var(--dim);border-color:var(--line)}
-/* 도구 + 모델 + 강도를 한 덩어리로 */
-.tgroup{
-  display:inline-flex;align-items:center;gap:0;border:1px solid var(--accent-dim);border-radius:999px;
-  background:var(--panel2);overflow:hidden;
-}
-.tgroup .rchip.tool{border:0;border-radius:0;padding-right:8px}
-.tgroup.dis{border-color:var(--line)}
-.rsel{
-  appearance:none;-webkit-appearance:none;border:0;border-left:1px solid var(--line);
-  background:transparent;color:var(--fg);font:inherit;font-size:11.5px;
-  padding:3px 18px 3px 8px;cursor:pointer;max-width:150px;
-  background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),linear-gradient(135deg,var(--dim) 50%,transparent 50%);
-  background-position:calc(100% - 9px) 55%,calc(100% - 5px) 55%;background-size:4px 4px;background-repeat:no-repeat;
-}
-.rsel.eff{color:var(--dim);max-width:90px}
-.rsel:hover{background-color:rgba(255,255,255,.04)}
-.rsel:focus{outline:none;background-color:rgba(201,143,90,.12)}
-.rsel:disabled{opacity:.5;cursor:default}
-.rsel option{background:var(--panel);color:var(--fg)}
-
 /* 부르는 중 */
 .rchip.wait{opacity:1;animation:rpulse 1.2s ease-in-out infinite}
 @keyframes rpulse{50%{opacity:.45}}
@@ -303,14 +283,6 @@ select option{background:var(--panel2);color:var(--fg)}
 .chat-err{display:none;flex:none;padding:6px 12px;color:#e6a07a;font-size:11.5px;border-top:1px solid var(--line)}
 .chat-err.on{display:block}
 
-/* 읽음 표시 */
-.chat-seen{margin-top:3px;font-size:10px;color:var(--dim);text-align:right}
-.chat-seen.wait{color:#e6a07a}
-/* 실제로 일하는 중인 칩은 점이 뛴다 (대기 중과 구분) */
-.rchip.busy .dot{animation:bpulse 1s ease-in-out infinite}
-@keyframes bpulse{50%{transform:scale(.55);opacity:.5}}
-.chat-to-tag{display:none;flex:none;padding:4px 12px 0;color:var(--accent);font-size:11px}
-.chat-to-tag.on{display:block}
 .chat-input{flex:none;display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);align-items:flex-end}
 .chat-input textarea{
   flex:1;resize:none;overflow-y:auto;max-height:110px;

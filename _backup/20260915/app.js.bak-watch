@@ -412,36 +412,6 @@ const LIVE = new Set(["active", "listening"]);          // listening = 대기 �
 const STATUS_KO = { active: "작업 중", listening: "대기 중", blocked: "승인 대기",
                     inactive: "꺼짐", unknown: "알 수 없음" };
 
-// hcom 이 남기는 상태 맥락. '대기 중'이 두 가지라서 이걸 안 보면 왜 안 움직이는지 모른다:
-// 할 일이 없어 쉬는 것과, 입력창에 글만 꽂히고 엔터가 안 눌린 것.
-const CTX_KO = {
-  "tui:prompt-has-text": { ko: "엔터 안 눌림", bad: true,
-    why: "보낸 글이 입력창에 꽂힌 채로 있어. 그 탭에 가서 Enter 를 눌러야 움직여" },
-  "launch_blocked": { ko: "시작 못 함", bad: true,
-    why: "뜨다가 멈췄어 — 폴더 신뢰 여부 같은 걸 묻는 중일 수 있어. 그 탭을 직접 봐" },
-  "prompt": { ko: "지시 읽는 중" },
-  "ready_observed": { ko: "준비됨" },
-  "": { ko: "" },
-};
-
-function ctxOf(a) {
-  const c = a.ctx || "";
-  if (CTX_KO[c]) return CTX_KO[c];
-  if (c.startsWith("tool:")) return { ko: c.slice(5) + " 쓰는 중" };
-  if (c.startsWith("tui:")) return { ko: c.slice(4) };
-  return { ko: c };
-}
-
-function agoKo(sec) {
-  if (!sec) return "";
-  const d = Math.floor(Date.now() / 1000 - sec);
-  if (d < 0) return "";
-  if (d < 60) return "방금";
-  if (d < 3600) return Math.floor(d / 60) + "분 전";
-  if (d < 86400) return Math.floor(d / 3600) + "시간 전";
-  return Math.floor(d / 86400) + "일 전";
-}
-
 function newChatPane() {
   const id = "h" + ++_chatSeq;
   const wrap = document.createElement("div");
@@ -713,21 +683,10 @@ function paintChat(pane) {
     const mine = m.from === pane.me;
     const to = (m.to && m.to.length) ? m.to.join(", ")
              : (m.scope === "broadcast" ? "전체" : "");
-    let seen = "";
-    if (mine && m.to && m.to.length) {
-      const late = m.to.filter((n) => {
-        const a = pane.agents.find((x) => x.name === n);
-        return a && (a.seen || 0) < m.id;
-      });
-      seen = late.length
-        ? `<div class="chat-seen wait">아직 안 읽음 · ${esc(late.join(", "))}</div>`
-        : `<div class="chat-seen">읽음</div>`;
-    }
     return `<div class="chat-row ${mine ? "mine" : ""}">
         <div class="chat-msg">
           <div class="chat-who">${esc(m.from)}${to ? ` <span class="chat-to">→ ${esc(to)}</span>` : ""}</div>
           <div class="chat-text">${esc(m.text)}</div>
-          ${seen}
         </div></div>`;
   }).join("") || `<div class="hollow">아직 대화가 없어 — 위쪽 <b>+ 도구</b>를 누르거나 여기로 끌어다 놔서 에이전트를 불러와</div>`;
   if (stuck) log.scrollTop = log.scrollHeight;
@@ -749,23 +708,12 @@ function paintChat(pane) {
     const live = LIVE.has(a.status);
     const waking = pane.pending["resume:" + a.name];
     const going = pane.dropping[a.name];
-    if (live || a.status === "blocked") {
-      const c = ctxOf(a);
-      const stuck = c.bad || a.status === "blocked";
-      const busy = a.status === "active";
-      const note = going ? "내보내는 중…"
-                 : c.bad ? c.ko
-                 : a.status === "blocked" ? (c.ko || "승인 대기")
-                 : busy ? (c.ko || "작업 중")
-                 : c.ko || "대기";
-      return chip({ cls: (stuck ? "warn" : "on") + (busy ? " busy" : "") + (going ? " wait" : ""),
-                    act: "mention", arg: a.name, disabled: going, soft: true,
-                    title: [`${a.tool} · ${STATUS_KO[a.status] || a.status}`,
-                            c.ko && `지금: ${c.ko}`,
-                            c.why, a.detail, agoKo(a.at) && `마지막 움직임 ${agoKo(a.at)}`,
-                            "눌러서 @멘션 · 우클릭하면 내보낸다"].filter(Boolean).join("\n"),
-                    body: face(a.name, a.tool, note) });
-    }
+    if (live || a.status === "blocked")
+      return chip({ cls: (live ? "on" : "warn") + (going ? " wait" : ""), act: "mention", arg: a.name,
+                    disabled: going, soft: true,
+                    title: `${STATUS_KO[a.status] || a.status} · 눌러서 @멘션 · 우클릭하면 내보낸다`,
+                    body: face(a.name, a.tool, going ? "내보내는 중…"
+                                     : a.status === "blocked" ? "승인 대기" : a.tool) });
     const can = ready.has(a.tool);
     return chip({ cls: "off" + (waking || going ? " wait" : ""), act: "resume", arg: a.name, drag: can,
                   disabled: !can || waking || going, soft: true,
@@ -823,14 +771,9 @@ function paintChat(pane) {
       : `<span class="rempty">불러올 도구 없음</span>`;
   }
 
-  const jammed = pane.agents
-    .map((a) => [a, ctxOf(a)])
-    .filter(([a, c]) => c.bad || a.status === "blocked")
-    .map(([a, c]) => `${a.name}: ${c.why || c.ko || STATUS_KO[a.status] || a.status}`);
-
   const eb = pane.el.querySelector(".chat-err");
-  eb.textContent = pane.err || jammed.join(" / ") || "";
-  eb.classList.toggle("on", !!(pane.err || jammed.length));
+  eb.textContent = pane.err || "";
+  eb.classList.toggle("on", !!pane.err);
 }
 
 async function loadTree(pane, path) {

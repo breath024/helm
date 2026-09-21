@@ -928,15 +928,10 @@ def hcom_state():
                 elif d.get("action") in ("created", "ready", "stopped", "killed"):
                     msgs.append({"id": eid, "ts": ts, "kind": "life",
                                  "from": inst, "text": d.get("action")})
-            for (name, tool, status, directory, created,
-                 ctx, detail, stime, seen) in con.execute(
-                    "select name,tool,status,directory,created_at,"
-                    "status_context,status_detail,status_time,last_event_id "
-                    "from instances order by created_at"):
+            for name, tool, status, directory, created in con.execute(
+                    "select name,tool,status,directory,created_at from instances order by created_at"):
                 agents.append({"name": name, "tool": tool, "status": status,
-                               "dir": directory or "", "created": created or 0,
-                               "ctx": ctx or "", "detail": (detail or "")[:200],
-                               "at": stime or 0, "seen": seen or 0})
+                               "dir": directory or "", "created": created or 0})
             # 멈춘 에이전트 = 마지막 life 이벤트가 stopped/killed 이고 지금 instances 에 없는 것.
             # stopped 이벤트의 snapshot 에 tool·session_id 가 들어 있다 (session_id 가 있어야 되살린다)
             current = {a["name"] for a in agents}
@@ -1043,10 +1038,7 @@ def _helm_terminal_cmd():
     py = Path(sys.executable)
     if py.with_name("pythonw.exe").exists():
         py = py.with_name("pythonw.exe")
-    # {script} 는 빼면 안 된다 — hcom 은 {script} 없는 명령을 거부하고 조용히 기본 동작으로
-    # 빠져서(= 창 없이 실행) 에이전트가 화면에 안 보인다. cwd 는 공백이 있을 수 있어 맨 뒤에.
-    return (f"{py.as_posix()} {HCOM_OPEN.as_posix()} "
-            f"{{script}} {{instance_name}} {{tool}} {{cwd}}")
+    return f"{py.as_posix()} {HCOM_OPEN.as_posix()} {{process_id}} {{instance_name}} {{tool}}"
 
 
 def _hcom_env_for_helm():

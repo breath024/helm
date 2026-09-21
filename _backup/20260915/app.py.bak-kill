@@ -751,8 +751,7 @@ def switch_model(pid):
 #   보내려면 identity 가 있어야 한다("hcom send" 는 이름 없이는 거부). 사람 자리는 bigboss.
 HCOM_DIR = Path(os.environ.get("HCOM_DIR") or Path.home() / ".hcom")
 HCOM_DB = HCOM_DIR / "hcom.db"
-HCOM_ME = "bigboss"
-_HCOM_LIVE = ("active", "listening", "blocked")          # hcom 이 권위자로 취급하는 이름이라 사람 자리로 쓴다
+HCOM_ME = "bigboss"          # hcom 이 권위자로 취급하는 이름이라 사람 자리로 쓴다
 
 
 def _hcom_exe():
@@ -928,15 +927,10 @@ def hcom_state():
                 elif d.get("action") in ("created", "ready", "stopped", "killed"):
                     msgs.append({"id": eid, "ts": ts, "kind": "life",
                                  "from": inst, "text": d.get("action")})
-            for (name, tool, status, directory, created,
-                 ctx, detail, stime, seen) in con.execute(
-                    "select name,tool,status,directory,created_at,"
-                    "status_context,status_detail,status_time,last_event_id "
-                    "from instances order by created_at"):
+            for name, tool, status, directory, created in con.execute(
+                    "select name,tool,status,directory,created_at from instances order by created_at"):
                 agents.append({"name": name, "tool": tool, "status": status,
-                               "dir": directory or "", "created": created or 0,
-                               "ctx": ctx or "", "detail": (detail or "")[:200],
-                               "at": stime or 0, "seen": seen or 0})
+                               "dir": directory or "", "created": created or 0})
             # 멈춘 에이전트 = 마지막 life 이벤트가 stopped/killed 이고 지금 instances 에 없는 것.
             # stopped 이벤트의 snapshot 에 tool·session_id 가 들어 있다 (session_id 가 있어야 되살린다)
             current = {a["name"] for a in agents}
@@ -961,57 +955,9 @@ def hcom_state():
     except Exception as ex:
         return jsonify({"ok": False, "error": f"hcom.db 읽기 실패: {ex}",
                         "messages": [], "agents": [], "last_id": after})
-    agents, stopped = _drop_hidden(agents, stopped)
     return jsonify({"ok": True, "messages": msgs, "agents": agents, "stopped": stopped,
                     "tools": _hcom_tools(), "spawns": _take_spawns(),
                     "last_id": last, "me": HCOM_ME})
-
-
-def _drop_hidden(agents, stopped):
-    """목록에서 지운 애들을 빼고 준다. 같은 이름이 다시 살아 돌아오면 숨김을 푼다
-    (hcom 은 이름을 돌려쓴다 — 계속 숨겨 두면 새로 부른 애가 안 보인다)."""
-    hidden = set(load_config().get("hcom_hidden") or [])
-    if not hidden:
-        return agents, stopped
-    back = hidden & {a["name"] for a in agents if a["status"] in _HCOM_LIVE}
-    if back:
-        cfg = load_config()
-        cfg["hcom_hidden"] = [n for n in (cfg.get("hcom_hidden") or []) if n not in back]
-        save_config(cfg)
-        hidden -= back
-    return ([a for a in agents if a["name"] not in hidden],
-            [x for x in stopped if x["name"] not in hidden])
-
-
-def _hcom_name(body):
-    name = (body.get("name") or "").strip()
-    return name if re.fullmatch(r"[a-z0-9_]+", name) and name != HCOM_ME else None
-
-
-@app.route("/api/hcom/kill", methods=["POST"])
-def hcom_kill():
-    """켜져 있는 애를 방에서 내보낸다. 세션은 남아서 나중에 다시 깨울 수 있다."""
-    name = _hcom_name(request.get_json(force=True))
-    if not name:
-        return jsonify({"error": "이름이 이상해"}), 400
-    ok, out = _hcom_spawn(["kill", name], wait=15)
-    if not ok:
-        return jsonify({"error": out or "내보내기 실패"}), 500
-    return jsonify({"ok": True, "out": out})
-
-
-@app.route("/api/hcom/hide", methods=["POST"])
-def hcom_hide():
-    """이미 꺼진 애를 목록에서만 지운다. hcom.db 는 건드리지 않는다."""
-    name = _hcom_name(request.get_json(force=True))
-    if not name:
-        return jsonify({"error": "이름이 이상해"}), 400
-    cfg = load_config()
-    lst = [n for n in (cfg.get("hcom_hidden") or []) if n != name]
-    lst.append(name)
-    cfg["hcom_hidden"] = lst[-200:]
-    save_config(cfg)
-    return jsonify({"ok": True})
 
 
 @app.route("/api/hcom/send", methods=["POST"])
@@ -1043,10 +989,7 @@ def _helm_terminal_cmd():
     py = Path(sys.executable)
     if py.with_name("pythonw.exe").exists():
         py = py.with_name("pythonw.exe")
-    # {script} 는 빼면 안 된다 — hcom 은 {script} 없는 명령을 거부하고 조용히 기본 동작으로
-    # 빠져서(= 창 없이 실행) 에이전트가 화면에 안 보인다. cwd 는 공백이 있을 수 있어 맨 뒤에.
-    return (f"{py.as_posix()} {HCOM_OPEN.as_posix()} "
-            f"{{script}} {{instance_name}} {{tool}} {{cwd}}")
+    return f"{py.as_posix()} {HCOM_OPEN.as_posix()} {{process_id}} {{instance_name}} {{tool}}"
 
 
 def _hcom_env_for_helm():
